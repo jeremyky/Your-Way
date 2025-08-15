@@ -2,26 +2,134 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/Button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { SparklesIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline'
+import MFAEnrollment from '@/components/auth/MFAEnrollment'
+import MFAVerification from '@/components/auth/MFAVerification'
+import DebugInfo from '@/components/auth/DebugInfo'
+import { useAuth } from '@/lib/auth-context'
+import toast from 'react-hot-toast'
 
 export default function AuthPage() {
   const [isSignUp, setIsSignUp] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [showMFA, setShowMFA] = useState(false)
+  const [showMFAVerification, setShowMFAVerification] = useState(false)
+  const [mfaData, setMfaData] = useState<{ factorId: string; challengeId: string } | null>(null)
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    password: ''
+  })
+  
+  const router = useRouter()
+  const { signIn, signUp, signOut } = useAuth()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     
-    // TODO: Implement authentication logic
-    console.log('Auth form submitted:', isSignUp ? 'signup' : 'signin')
-    
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      if (isSignUp) {
+        const { error } = await signUp(formData.email, formData.password, {
+          full_name: formData.name
+        })
+        
+        if (error) {
+          toast.error(error.message)
+        } else {
+          toast.success('Account created! Please check your email to verify your account.')
+          // Show MFA enrollment after successful signup
+          setShowMFA(true)
+        }
+      } else {
+        const { error, requiresMFA, factorId, challengeId } = await signIn(formData.email, formData.password)
+        
+        if (error) {
+          toast.error(error.message)
+        } else if (requiresMFA && factorId && challengeId) {
+          // MFA verification required
+          setMfaData({ factorId, challengeId })
+          setShowMFAVerification(true)
+        } else {
+          toast.success('Signed in successfully!')
+          router.push('/psychology')
+        }
+      }
+    } catch (error) {
+      console.error('Auth error:', error)
+      toast.error('An unexpected error occurred')
+    } finally {
       setLoading(false)
-    }, 1000)
+    }
+  }
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData(prev => ({
+      ...prev,
+      [e.target.id]: e.target.value
+    }))
+  }
+
+  const handleMFAComplete = () => {
+    setShowMFA(false)
+    toast.success('2FA setup complete! You can now sign in with your new account.')
+    setIsSignUp(false)
+    // Clear form data after successful signup
+    setFormData({ name: '', email: '', password: '' })
+  }
+
+  const handleMFACancel = () => {
+    setShowMFA(false)
+    // If user cancels MFA, they can still sign in later
+    toast('Account created! You can enable 2FA later in your account settings.')
+    setIsSignUp(false)
+    // Clear form data
+    setFormData({ name: '', email: '', password: '' })
+  }
+
+  const handleMFAVerificationSuccess = () => {
+    setShowMFAVerification(false)
+    setMfaData(null)
+    toast.success('2FA verification successful!')
+    router.push('/psychology')
+  }
+
+  const handleMFAVerificationCancel = async () => {
+    setShowMFAVerification(false)
+    setMfaData(null)
+    // Sign out the user since they cancelled MFA verification
+    await signOut()
+    toast('Sign in cancelled')
+  }
+
+  // Show MFA enrollment if user just signed up
+  if (showMFA) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-earth-50 via-sage-50 to-primary-50 flex items-center justify-center px-4">
+        <MFAEnrollment 
+          onComplete={handleMFAComplete}
+          onCancel={handleMFACancel}
+        />
+      </div>
+    )
+  }
+
+  // Show MFA verification if user is signing in with 2FA enabled
+  if (showMFAVerification && mfaData) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-earth-50 via-sage-50 to-primary-50 flex items-center justify-center px-4">
+        <MFAVerification
+          factorId={mfaData.factorId}
+          challengeId={mfaData.challengeId}
+          onSuccess={handleMFAVerificationSuccess}
+          onCancel={handleMFAVerificationCancel}
+        />
+      </div>
+    )
   }
 
   return (
@@ -61,6 +169,8 @@ export default function AuthPage() {
                     id="name"
                     type="text"
                     required
+                    value={formData.name}
+                    onChange={handleInputChange}
                     className="input-field"
                     placeholder="Enter your full name"
                   />
@@ -75,6 +185,8 @@ export default function AuthPage() {
                   id="email"
                   type="email"
                   required
+                  value={formData.email}
+                  onChange={handleInputChange}
                   className="input-field"
                   placeholder="Enter your email"
                 />
@@ -89,6 +201,8 @@ export default function AuthPage() {
                     id="password"
                     type={showPassword ? 'text' : 'password'}
                     required
+                    value={formData.password}
+                    onChange={handleInputChange}
                     className="input-field pr-10"
                     placeholder="Enter your password"
                   />
@@ -173,6 +287,11 @@ export default function AuthPage() {
               Privacy Policy
             </Link>
           </p>
+        </div>
+        
+        {/* Temporary debug info - remove this after fixing the issue */}
+        <div className="mt-4">
+          <DebugInfo />
         </div>
       </div>
     </div>

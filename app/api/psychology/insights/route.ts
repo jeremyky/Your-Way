@@ -2,6 +2,32 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { PsychologyAssistantService } from '@/lib/psychology-assistant-service';
 
+// Define types for database entries
+interface MoodEntry {
+  mood: string;
+  notes?: string;
+  created_at: string;
+}
+
+interface Goal {
+  title: string;
+  description?: string;
+  status: string;
+  created_at: string;
+}
+
+interface JournalEntry {
+  content: string;
+  created_at: string;
+}
+
+interface Conversation {
+  message: string;
+  response: string;
+  insights?: any;
+  created_at: string;
+}
+
 // Check if we're in development mode
 const isDevelopment = process.env.NODE_ENV === 'development';
 
@@ -70,10 +96,10 @@ export async function GET(request: NextRequest) {
     const insights = await psychologyService.getUserInsights(userId);
 
     // Get additional data from database for comprehensive insights
-    let journalEntries = null;
-    let moodEntries = null;
-    let goals = null;
-    let conversations = null;
+    let journalEntries: JournalEntry[] | null = null;
+    let moodEntries: MoodEntry[] | null = null;
+    let goals: Goal[] | null = null;
+    let conversations: Conversation[] | null = null;
 
     if (supabase) {
       const [
@@ -115,7 +141,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Calculate mood trends
-    const moodTrends = moodEntries?.reduce((acc: any, entry) => {
+    const moodTrends = moodEntries?.reduce((acc: Record<string, string[]>, entry: MoodEntry) => {
       const date = new Date(entry.created_at).toDateString();
       if (!acc[date]) {
         acc[date] = [];
@@ -125,7 +151,7 @@ export async function GET(request: NextRequest) {
     }, {});
 
     // Calculate goal progress
-    const goalProgress = goals?.reduce((acc: any, goal) => {
+    const goalProgress = goals?.reduce((acc: Record<string, number>, goal: Goal) => {
       acc[goal.status] = (acc[goal.status] || 0) + 1;
       return acc;
     }, {});
@@ -163,13 +189,20 @@ export async function GET(request: NextRequest) {
   }
 }
 
-async function generateWeeklySummary(userId: string, data: any) {
+interface WeeklySummaryData {
+  journalEntries: JournalEntry[] | null;
+  moodEntries: MoodEntry[] | null;
+  goals: Goal[] | null;
+  conversations: Conversation[] | null;
+}
+
+async function generateWeeklySummary(userId: string, data: WeeklySummaryData) {
   try {
     const summaryPrompt = `Generate a brief weekly summary for a user based on their recent activity:
 
-Journal Entries: ${data.journalEntries?.map((e: any) => e.content.substring(0, 100)).join('; ') || 'None'}
-Mood Entries: ${data.moodEntries?.map((e: any) => `${e.mood}: ${e.notes}`).join('; ') || 'None'}
-Goals: ${data.goals?.map((e: any) => `${e.title} (${e.status})`).join('; ') || 'None'}
+Journal Entries: ${data.journalEntries?.map((e: JournalEntry) => e.content.substring(0, 100)).join('; ') || 'None'}
+Mood Entries: ${data.moodEntries?.map((e: MoodEntry) => `${e.mood}: ${e.notes}`).join('; ') || 'None'}
+Goals: ${data.goals?.map((e: Goal) => `${e.title} (${e.status})`).join('; ') || 'None'}
 
 Provide a 2-3 sentence summary that highlights:
 1. Key themes or patterns
